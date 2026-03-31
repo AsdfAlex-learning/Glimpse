@@ -1,0 +1,37 @@
+# Core UI
+PySide6==6.6.1
+
+# Database & Embedding
+chromadb==0.4.22
+transformers==4.37.2
+sentence-transformers==2.2.2
+torch==2.1.2
+
+# Capture & Processing
+mss==9.0.1
+Pillow==10.2.0
+pynput==1.7.6
+
+# Async & API
+celery==5.3.4
+asyncio==3.4.3
+openai==1.13.3
+requests==2.31.0
+python-dotenv==1.0.0
+
+# Utilities
+psutil==5.9.8
+python-dateutil==2.8.2
+uuid==1.30
+typing-extensions==4.9.0
+
+# Testing
+pytest==7.4.4
+pytest-qt==4.2.0
+pytest-cov==4.1.0
+
+# Compatibility
+charset-normalizer==3.3.2
+idna==3.6
+urllib3==2.2.1
+certifi==2024.2.2
