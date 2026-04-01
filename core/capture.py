@@ -42,15 +42,21 @@ class CaptureManager:
         self._initialized = True
         self._sct = mss.mss()
         self._last_capture_time = 0
-        self._debounce_interval = 0.5
+        self._debounce_interval = 5.0
         self._cluster_threshold = 2.0
         self._last_region: Optional[Tuple[int, int, int, int]] = None
+        self._capture_count = 0
+        self._capture_window_start = 0
+        self._max_captures_per_window = 10
 
     def capture_fullscreen(self, delay: float = 0) -> Optional[CaptureResult]:
         if delay > 0:
             time.sleep(delay)
 
         if not self._check_debounce():
+            return None
+
+        if self._check_force_split():
             return None
 
         try:
@@ -61,6 +67,8 @@ class CaptureManager:
             image_path = path_manager.get_screenshot_path(filename)
             
             img.save(str(image_path), "PNG")
+            
+            self._update_capture_count()
             
             return CaptureResult(
                 image_path=str(image_path),
@@ -77,6 +85,12 @@ class CaptureManager:
         if w <= 0 or h <= 0:
             return None
 
+        if not self._check_debounce():
+            return None
+
+        if self._check_force_split():
+            return None
+
         if self._is_clustered_region(region):
             return None
 
@@ -90,8 +104,9 @@ class CaptureManager:
             
             img.save(str(image_path), "PNG")
             
+            self._update_capture_count()
+            
             self._last_region = region
-            self._last_capture_time = time.time()
             
             return CaptureResult(
                 image_path=str(image_path),
@@ -108,6 +123,20 @@ class CaptureManager:
         if current_time - self._last_capture_time < self._debounce_interval:
             return False
         return True
+
+    def _check_force_split(self) -> bool:
+        current_time = time.time()
+        if current_time - self._capture_window_start > self._debounce_interval:
+            self._capture_window_start = current_time
+            self._capture_count = 0
+        
+        if self._capture_count >= self._max_captures_per_window:
+            return True
+        return False
+
+    def _update_capture_count(self):
+        self._capture_count += 1
+        self._last_capture_time = time.time()
 
     def _is_clustered_region(self, region: Tuple[int, int, int, int]) -> bool:
         if self._last_region is None:

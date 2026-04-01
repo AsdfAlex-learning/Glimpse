@@ -19,6 +19,7 @@ class MemoryRecord:
     ai_summary: str
     app_name: str
     text_content: Optional[str] = None
+    sync_status: str = "PENDING"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -32,6 +33,7 @@ class MemoryRecord:
             ai_summary=row[3],
             app_name=row[4],
             text_content=row[5] if len(row) > 5 else None,
+            sync_status=row[6] if len(row) > 6 else "PENDING",
         )
 
 
@@ -73,7 +75,8 @@ class SQLiteManager:
                 image_path TEXT NOT NULL,
                 ai_summary TEXT,
                 app_name TEXT,
-                text_content TEXT
+                text_content TEXT,
+                sync_status TEXT DEFAULT 'PENDING'
             )
         """)
 
@@ -95,8 +98,8 @@ class SQLiteManager:
                 cursor = self._conn.cursor()
                 cursor.execute(
                     """
-                    INSERT INTO memories (id, created_at, image_path, ai_summary, app_name, text_content)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO memories (id, created_at, image_path, ai_summary, app_name, text_content, sync_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         record.id,
@@ -105,6 +108,7 @@ class SQLiteManager:
                         record.ai_summary,
                         record.app_name,
                         record.text_content,
+                        record.sync_status,
                     ),
                 )
                 self._conn.commit()

@@ -15,23 +15,10 @@
 | **数据库** | chromadb==0.4.22 | 向量数据库 |
 | **Embedding** | transformers, sentence-transformers, torch | AI 嵌入模型 |
 | **截图** | mss==9.0.1, Pillow==10.2.0 | 屏幕截图处理 |
+| **OCR** | rapidocr-onnxruntime | 文字识别（可选） |
 | **输入** | pynput==1.7.6 | 全局热键监听 |
 | **API** | openai==1.13.3, requests==2.31.0 | AI 接口调用 |
 | **工具** | psutil, python-dotenv, python-dateutil | 系统工具 |
-
----
-
-## 选择指南
-
-**venv（推荐大多数用户）：**
-- ✅ Python 标准库自带，无需额外安装
-- ✅ 轻量级，创建速度快
-- ✅ 适合纯 Python 项目
-
-**Conda（适合以下情况）：**
-- ✅ 需要管理非 Python 依赖（如 CUDA、MKL 等）
-- ✅ 需要使用 Conda 特有的包
-- ✅ 已经在使用 Anaconda/Miniconda 生态
 
 ---
 
