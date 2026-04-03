@@ -13,9 +13,9 @@
 |------|------|------|
 | **UI** | PySide6==6.6.1 | Qt for Python GUI 框架 |
 | **数据库** | chromadb==0.4.22 | 向量数据库 |
-| **Embedding** | transformers, sentence-transformers, torch | AI 嵌入模型 |
+| **Embedding** | sentence-transformers==2.2.2 | 文本嵌入模型 |
 | **截图** | mss==9.0.1, Pillow==10.2.0 | 屏幕截图处理 |
-| **OCR** | rapidocr-onnxruntime | 文字识别（可选） |
+| **OCR** | rapidocr-onnxruntime | 文字识别 |
 | **输入** | pynput==1.7.6 | 全局热键监听 |
 | **API** | openai==1.13.3, requests==2.31.0 | AI 接口调用 |
 | **工具** | psutil, python-dotenv, python-dateutil | 系统工具 |
@@ -47,15 +47,34 @@ pip install -r requirements.txt
 
 ```powershell
 # 1. 进入项目目录
-cd D:\ISI\Glimpse
+cd path\to\Glimpse
 
 # 2. 创建虚拟环境
 python -m venv venv
 
 # 3. 激活虚拟环境
-.\venv\Scripts\Activate.ps1
+venv\Scripts\Activate.ps1
 
 # 4. 升级 pip
+pip install --upgrade pip setuptools wheel
+
+# 5. 安装依赖
+pip install -r requirements.txt
+```
+
+### Conda 环境
+
+```bash
+# 1. 进入项目目录
+cd path/to/Glimpse
+
+# 2. 创建 Conda 环境
+conda create -n glimpse python=3.10
+
+# 3. 激活 Conda 环境
+conda activate glimpse
+
+# 4. 升级 pypi
 pip install --upgrade pip setuptools wheel
 
 # 5. 安装依赖
