@@ -86,3 +86,12 @@ htmlcov/
 
 # Documentation
 docs/_build/
+
+# Claude related
+.claude/
+claude-*.json
+claude-*.env
+*.claude.log
+anthropic*.json
+anthropic*.env
+CLAUDE.md
