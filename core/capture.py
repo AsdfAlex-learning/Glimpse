@@ -46,7 +46,6 @@ class CaptureManager:
         self._debounce_interval = 5.0
         self._cluster_threshold = 2.0
         self._last_region: Optional[Tuple[int, int, int, int]] = None
-        self._capture_count = 0
         self._capture_window_start = 0
         self._max_captures_per_window = 10
         self._fullscreen_debounce_time = 0
@@ -135,7 +134,6 @@ class CaptureManager:
             current_time = time.time()
             if current_time - self._capture_window_start >= self._debounce_interval:
                 self._capture_window_start = current_time
-                self._capture_count = 0
                 self._fullscreen_count = 0
                 self._region_count = 0
 
@@ -146,13 +144,12 @@ class CaptureManager:
 
     def _update_capture_count(self, is_fullscreen: bool = True):
         with self._settings_lock:
-            self._capture_count += 1
-            current_time = time.time()
+            self._last_capture_time = time.time()
             if is_fullscreen:
-                self._fullscreen_debounce_time = current_time
+                self._fullscreen_debounce_time = self._last_capture_time
                 self._fullscreen_count += 1
             else:
-                self._region_debounce_time = current_time
+                self._region_debounce_time = self._last_capture_time
                 self._region_count += 1
 
     def _is_clustered_region(self, region: Tuple[int, int, int, int]) -> bool:
