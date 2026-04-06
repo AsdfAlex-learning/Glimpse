@@ -58,8 +58,9 @@ def main():
     from services.keyboard_manager import keyboard_manager
     from config.settings_manager import settings_manager
     
-    # 从配置中获取快捷键
-    screenshot_hotkey = settings_manager.get("hotkeys.screenshot")
+    # 从配置中获取快捷键配置
+    # 默认值为 Ctrl+Shift+G，此处防止配置为空导致异常
+    screenshot_hotkey = settings_manager.get("hotkeys.screenshot", "<ctrl>+<shift>+g")
     
     # 注册全局快捷键
     def on_screenshot():

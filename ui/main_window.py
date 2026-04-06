@@ -1,11 +1,17 @@
 """
 Main Window - 主窗体与布局
 """
-from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QPushButton, QLineEdit, QLabel, QListWidget, QTextEdit
+from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QPushButton, QLineEdit, QLabel, QListWidget, QTextEdit, QSystemTrayIcon, QMenu
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QShortcut, QKeySequence, QIcon, QPixmap
 
 from ui.signals import signals
+from ui.settings_dialog import SettingsDialog
+from services.keyboard_manager import keyboard_manager
+from core.capture import capture_manager
+from core.task_queue import task_queue
+from config.settings_manager import settings_manager
+from db.sqlite_manager import sqlite_manager
 
 
 class MainWindow(QMainWindow):
@@ -22,6 +28,7 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._setup_shortcuts()
         self._setup_tray_icon()
+        self._setup_menu_bar()
         self._connect_signals()
         self._load_memories()
 
@@ -57,8 +64,6 @@ class MainWindow(QMainWindow):
         self.statusBar().addWidget(self.status_bar)
 
     def _setup_shortcuts(self):
-        from PySide6.QtGui import QShortcut, QKeySequence
-
         self.search_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
         self.search_shortcut.activated.connect(lambda: self.search_input.setFocus())
 
@@ -69,9 +74,6 @@ class MainWindow(QMainWindow):
         self.clear_shortcut.activated.connect(self._clear_search)
 
     def _setup_tray_icon(self):
-        from PySide6.QtWidgets import QSystemTrayIcon
-        from PySide6.QtGui import QIcon, QPixmap, QPainter
-
         pixmap = QPixmap(24, 24)
         pixmap.fill(Qt.GlobalColor.blue)
         icon = QIcon(pixmap)
@@ -79,10 +81,43 @@ class MainWindow(QMainWindow):
         self.tray_icon = QSystemTrayIcon(icon, self)
         self.tray_icon.activated.connect(self._on_tray_activated)
 
-        menu = self.menuBar().addMenu("文件")
+        tray_menu = QMenu()
+        show_action = QAction("显示", self)
+        show_action.triggered.connect(self.showNormal)
+        tray_menu.addAction(show_action)
+
+        tray_menu.addSeparator()
+
         quit_action = QAction("退出", self)
-        quit_action.triggered.connect(self.close)
+        quit_action.triggered.connect(self._on_quit)
+        tray_menu.addAction(quit_action)
+
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.show()
+
+    def _setup_menu_bar(self):
+        menu = self.menuBar().addMenu("文件")
+
+        settings_action = QAction("设置", self)
+        settings_action.triggered.connect(self._on_open_settings)
+        menu.addAction(settings_action)
+
+        menu.addSeparator()
+
+        quit_action = QAction("退出", self)
+        quit_action.triggered.connect(self._on_quit)
         menu.addAction(quit_action)
+
+    def _on_open_settings(self):
+        """打开设置对话框"""
+        dialog = SettingsDialog(
+            settings_manager,
+            keyboard_manager,
+            capture_manager,
+            task_queue,
+            self
+        )
+        dialog.exec()
 
     def _connect_signals(self):
         signals.screenshot_completed.connect(self._on_screenshot_complete)
@@ -92,7 +127,6 @@ class MainWindow(QMainWindow):
         signals.status_updated.connect(self._on_status_updated)
 
     def _load_memories(self):
-        from db.sqlite_manager import sqlite_manager
         self._current_memories = sqlite_manager.get_all_memories(limit=100)
         self._update_memory_list()
 
@@ -117,11 +151,8 @@ class MainWindow(QMainWindow):
     def _do_search(self):
         query = self.search_input.text().strip()
         if not query:
-            self._current_memories = []
-            from db.sqlite_manager import sqlite_manager
             self._current_memories = sqlite_manager.get_all_memories(limit=100)
         else:
-            from db.sqlite_manager import sqlite_manager
             self._current_memories = sqlite_manager.search_memories(query)
         self._update_memory_list()
 
@@ -158,6 +189,23 @@ class MainWindow(QMainWindow):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
             self.showNormal()
             self.activateWindow()
+
+    def _on_quit(self):
+        """完全退出应用"""
+        self.tray_icon.hide()
+        self.close()
+        QApplication.instance().quit()
+
+    def closeEvent(self, event):
+        """窗口关闭时隐藏到托盘而不是退出"""
+        event.ignore()
+        self.hide()
+        self.tray_icon.showMessage(
+            "Glimpse",
+            "应用已最小化到托盘，点击托盘图标可重新打开",
+            QSystemTrayIcon.Information,
+            2000
+        )
 
 
 def main():
