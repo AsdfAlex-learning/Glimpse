@@ -51,6 +51,8 @@ class CaptureManager:
         self._max_captures_per_window = 10
         self._fullscreen_debounce_time = 0
         self._region_debounce_time = 0
+        self._fullscreen_count = 0
+        self._region_count = 0
 
     def capture_fullscreen(self, delay: float = 0) -> Optional[CaptureResult]:
         if delay > 0:
@@ -129,22 +131,29 @@ class CaptureManager:
         return True
 
     def _check_force_split(self) -> bool:
-        current_time = time.time()
-        if current_time - self._capture_window_start >= self._debounce_interval:
-            self._capture_window_start = current_time
-            self._capture_count = 0
+        with self._settings_lock:
+            current_time = time.time()
+            if current_time - self._capture_window_start >= self._debounce_interval:
+                self._capture_window_start = current_time
+                self._capture_count = 0
+                self._fullscreen_count = 0
+                self._region_count = 0
 
-        if self._capture_count >= self._max_captures_per_window:
-            return True
-        return False
+            count = self._fullscreen_count + self._region_count
+            if count >= self._max_captures_per_window:
+                return True
+            return False
 
     def _update_capture_count(self, is_fullscreen: bool = True):
-        self._capture_count += 1
-        current_time = time.time()
-        if is_fullscreen:
-            self._fullscreen_debounce_time = current_time
-        else:
-            self._region_debounce_time = current_time
+        with self._settings_lock:
+            self._capture_count += 1
+            current_time = time.time()
+            if is_fullscreen:
+                self._fullscreen_debounce_time = current_time
+                self._fullscreen_count += 1
+            else:
+                self._region_debounce_time = current_time
+                self._region_count += 1
 
     def _is_clustered_region(self, region: Tuple[int, int, int, int]) -> bool:
         if self._last_region is None:
@@ -212,10 +221,10 @@ class CaptureManager:
 
     def update_settings(self, settings: dict) -> bool:
         """更新截图设置（用于热更新，原子操作）
-        
+
         Args:
             settings: 包含截图设置的字典
-            
+
         Returns:
             是否更新成功
         """
@@ -224,18 +233,34 @@ class CaptureManager:
             old_cluster = self._cluster_threshold
             old_max = self._max_captures_per_window
 
+            new_debounce = old_debounce
+            new_cluster = old_cluster
+            new_max = old_max
+
             try:
                 if "debounce_interval" in settings:
-                    if not self.set_debounce_interval(settings["debounce_interval"]):
-                        return False
+                    value = float(settings["debounce_interval"])
+                    if value <= 0:
+                        raise ValueError(f"Invalid debounce_interval: {value}")
+                    new_debounce = value
+
                 if "cluster_threshold" in settings:
-                    if not self.set_cluster_threshold(settings["cluster_threshold"]):
-                        return False
+                    value = float(settings["cluster_threshold"])
+                    if value <= 0:
+                        raise ValueError(f"Invalid cluster_threshold: {value}")
+                    new_cluster = value
+
                 if "max_captures_per_window" in settings:
-                    if not self.set_max_captures_per_window(settings["max_captures_per_window"]):
-                        return False
+                    value = int(settings["max_captures_per_window"])
+                    if value <= 0:
+                        raise ValueError(f"Invalid max_captures_per_window: {value}")
+                    new_max = value
+
+                self._debounce_interval = new_debounce
+                self._cluster_threshold = new_cluster
+                self._max_captures_per_window = new_max
                 return True
-            except Exception:
+            except (ValueError, TypeError):
                 self._debounce_interval = old_debounce
                 self._cluster_threshold = old_cluster
                 self._max_captures_per_window = old_max
