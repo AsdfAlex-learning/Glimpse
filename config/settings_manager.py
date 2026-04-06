@@ -121,39 +121,49 @@ class SettingsManager:
                 return False
 
             if key == "hotkeys":
-                if not self._validate_hotkeys(section):
+                if not self._validate_hotkeys(section, allow_partial):
                     return False
             elif key == "screenshot":
-                if not self._validate_screenshot(section):
+                if not self._validate_screenshot(section, allow_partial):
                     return False
             elif key == "ai":
-                if not self._validate_ai(section):
+                if not self._validate_ai(section, allow_partial):
                     return False
             elif key == "ocr":
-                if not self._validate_ocr(section):
+                if not self._validate_ocr(section, allow_partial):
                     return False
             elif key == "database":
-                if not self._validate_database(section):
+                if not self._validate_database(section, allow_partial):
                     return False
             elif key == "ui":
-                if not self._validate_ui(section):
+                if not self._validate_ui(section, allow_partial):
                     return False
 
         return True
 
-    def _validate_hotkeys(self, section: Dict[str, Any]) -> bool:
+    def _validate_hotkeys(self, section: Dict[str, Any], required_keys: bool = True) -> bool:
         """验证 hotkeys 配置"""
         if not isinstance(section, dict):
             return False
+        if required_keys:
+            required = {"screenshot", "search", "clear"}
+            missing = required - set(section.keys())
+            if missing:
+                return False
         for key, value in section.items():
             if not isinstance(key, str) or not isinstance(value, str):
                 return False
         return True
 
-    def _validate_screenshot(self, section: Dict[str, Any]) -> bool:
+    def _validate_screenshot(self, section: Dict[str, Any], required_keys: bool = True) -> bool:
         """验证 screenshot 配置"""
         if not isinstance(section, dict):
             return False
+        if required_keys:
+            required = {"debounce_interval", "cluster_threshold", "max_captures_per_window"}
+            missing = required - set(section.keys())
+            if missing:
+                return False
         if "debounce_interval" in section:
             if not isinstance(section["debounce_interval"], (int, float)):
                 return False
@@ -169,10 +179,15 @@ class SettingsManager:
                 return False
         return True
 
-    def _validate_ai(self, section: Dict[str, Any]) -> bool:
+    def _validate_ai(self, section: Dict[str, Any], required_keys: bool = True) -> bool:
         """验证 ai 配置"""
         if not isinstance(section, dict):
             return False
+        if required_keys:
+            required = {"api_key", "model", "timeout"}
+            missing = required - set(section.keys())
+            if missing:
+                return False
         if "api_key" in section and section["api_key"] and not isinstance(section["api_key"], str):
             return False
         if "model" in section and not isinstance(section["model"], str):
@@ -184,17 +199,22 @@ class SettingsManager:
                 return False
         return True
 
-    def _validate_ocr(self, section: Dict[str, Any]) -> bool:
+    def _validate_ocr(self, section: Dict[str, Any], required_keys: bool = True) -> bool:
         """验证 ocr 配置"""
         if not isinstance(section, dict):
             return False
+        if required_keys:
+            required = {"engine", "language"}
+            missing = required - set(section.keys())
+            if missing:
+                return False
         if "engine" in section and not isinstance(section["engine"], str):
             return False
         if "language" in section and not isinstance(section["language"], str):
             return False
         return True
 
-    def _validate_database(self, section: Dict[str, Any]) -> bool:
+    def _validate_database(self, section: Dict[str, Any], required_keys: bool = False) -> bool:
         """验证 database 配置"""
         if not isinstance(section, dict):
             return False
@@ -205,10 +225,15 @@ class SettingsManager:
             return False
         return True
 
-    def _validate_ui(self, section: Dict[str, Any]) -> bool:
+    def _validate_ui(self, section: Dict[str, Any], required_keys: bool = True) -> bool:
         """验证 ui 配置"""
         if not isinstance(section, dict):
             return False
+        if required_keys:
+            required = {"theme", "auto_hide", "start_minimized"}
+            missing = required - set(section.keys())
+            if missing:
+                return False
         if "theme" in section and not isinstance(section["theme"], str):
             return False
         if "auto_hide" in section and not isinstance(section["auto_hide"], bool):
@@ -288,7 +313,8 @@ class SettingsManager:
             self._save_settings(temp_settings)
             self._settings = temp_settings
             return True
-        except Exception:
+        except (json.JSONDecodeError, IOError, OSError) as e:
+            print(f"Settings save error: {e}")
             return False
 
     def reset(self):
