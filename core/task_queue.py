@@ -58,6 +58,8 @@ class TaskQueue:
         self._tasks: Dict[str, Task] = {}
         self._futures: Dict[str, Future] = {}
         self._lock = threading.Lock()
+        self._condition = threading.Condition(self._lock)
+        self._shutdown = False
 
     def submit(
         self,
@@ -66,8 +68,10 @@ class TaskQueue:
         *args,
         callback: Optional[Callable] = None,
         **kwargs,
-    ) -> Task:
+    ) -> Optional[Task]:
         with self._lock:
+            if self._shutdown:
+                raise RuntimeError("TaskQueue has been shut down")
             if task_id in self._tasks:
                 existing = self._tasks[task_id]
                 if existing.status in (TaskStatus.PENDING, TaskStatus.RUNNING):
@@ -96,12 +100,13 @@ class TaskQueue:
             result = task.func(*task.args, **task.kwargs)
             task.status = TaskStatus.COMPLETED
             task.result = result
-            task.completed_at = time.time()
         except Exception as e:
             task.status = TaskStatus.FAILED
             task.error = str(e)
-            task.completed_at = time.time()
         finally:
+            task.completed_at = time.time()
+            with self._condition:
+                self._condition.notify_all()
             if task.callback:
                 try:
                     task.callback(task)
@@ -139,7 +144,75 @@ class TaskQueue:
                 if tid in self._futures:
                     del self._futures[tid]
 
+    def get_running_tasks(self) -> Dict[str, Task]:
+        """获取所有正在运行的任务"""
+        with self._lock:
+            return {
+                tid: task for tid, task in self._tasks.items()
+                if task.status == TaskStatus.RUNNING
+            }
+
+    def get_pending_tasks(self) -> Dict[str, Task]:
+        """获取所有待处理的任务"""
+        with self._lock:
+            return {
+                tid: task for tid, task in self._tasks.items()
+                if task.status == TaskStatus.PENDING
+            }
+
+    def wait_for_tasks_completion(self, timeout: Optional[float] = None) -> bool:
+        """等待所有任务完成（用于热更新前的资源清理）
+
+        Args:
+            timeout: 最大等待时间（秒），None 表示无限等待
+
+        Returns:
+            是否所有任务都已完成
+        """
+        start_time = time.time()
+        with self._condition:
+            while True:
+                active_tasks = [
+                    tid for tid, t in self._tasks.items()
+                    if t.status in (TaskStatus.PENDING, TaskStatus.RUNNING)
+                ]
+
+                if not active_tasks:
+                    return True
+
+                if timeout is not None:
+                    elapsed = time.time() - start_time
+                    remaining = timeout - elapsed
+                    if remaining <= 0:
+                        return False
+                    if not self._condition.wait(timeout=remaining):
+                        return False
+                else:
+                    self._condition.wait()
+
+    def cancel_all_pending(self) -> int:
+        """取消所有待处理的任务
+
+        Returns:
+            取消的任务数量
+        """
+        cancelled_count = 0
+        with self._condition:
+            for tid, task in self._tasks.items():
+                if task.status == TaskStatus.PENDING:
+                    if tid in self._futures:
+                        self._futures[tid].cancel()
+                    task.status = TaskStatus.CANCELLED
+                    task.error = "Cancelled by user"
+                    task.completed_at = time.time()
+                    cancelled_count += 1
+            if cancelled_count > 0:
+                self._condition.notify_all()
+        return cancelled_count
+    
     def shutdown(self, wait: bool = True):
+        with self._lock:
+            self._shutdown = True
         self._executor.shutdown(wait=wait)
 
 
