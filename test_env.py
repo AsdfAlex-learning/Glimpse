@@ -17,13 +17,12 @@ def test_python_version():
     print("=== 测试Python版本 ===")
     version = sys.version_info
     print(f"Python版本: {version.major}.{version.minor}.{version.micro}")
-    
-    # 检查Python版本是否为3.10.x
-    if version.major == 3 and version.minor == 10:
-        print(f"OK: Python版本满足要求 (3.10.{version.micro})")
+
+    if version.major == 3 and version.minor in (10, 13):
+        print(f"OK: Python版本满足要求 (3.{version.minor}.{version.micro})")
         return True
     else:
-        print("FAIL: Python环境版本错误，需要 3.10.x")
+        print("FAIL: Python环境版本错误，需要 3.10.x 或 3.13.x")
         return False
 
 
@@ -90,21 +89,25 @@ def test_dependencies():
 def test_module_imports():
     """测试模块导入"""
     print("\n=== 测试模块导入 ===")
-    
+
     modules = [
         'config.path_manager',
+        'config.settings_manager',
         'ui.main_window',
         'ui.signals',
+        'ui.settings_dialog',
         'core.capture',
         'core.task_queue',
         'services.ai_client',
         'services.ocr_engine',
+        'services.keyboard_manager',
+        'services.embedding_client',
         'db.sqlite_manager',
         'db.chroma_manager'
     ]
-    
+
     import_errors = []
-    
+
     for module in modules:
         try:
             __import__(module)
@@ -112,7 +115,7 @@ def test_module_imports():
         except Exception as e:
             import_errors.append((module, str(e)))
             print(f"FAIL: {module} 导入失败: {e}")
-    
+
     if import_errors:
         print("\nERROR: 部分模块导入失败")
         for module, error in import_errors:
@@ -126,7 +129,7 @@ def test_module_imports():
 def test_path_manager():
     """测试路径管理器"""
     print("\n=== 测试路径管理器 ===")
-    
+
     try:
         from config.path_manager import path_manager
         print("OK: 路径管理器初始化成功")
@@ -140,45 +143,120 @@ def test_path_manager():
         return False
 
 
+def test_settings_manager():
+    """测试设置管理器"""
+    print("\n=== 测试设置管理器 ===")
+
+    try:
+        from config.settings_manager import settings_manager
+        print("OK: 设置管理器初始化成功")
+
+        settings = settings_manager.get_all()
+        print(f"  - 获取全部设置: 成功 ({len(settings)} 个顶级键)")
+
+        hotkey = settings_manager.get("hotkeys.screenshot")
+        print(f"  - 获取快捷键配置: {hotkey}")
+
+        debounce = settings_manager.get("screenshot.debounce_interval")
+        print(f"  - 获取截图配置: 防抖间隔={debounce}")
+
+        return True
+    except Exception as e:
+        print(f"FAIL: 设置管理器测试失败: {e}")
+        return False
+
+
 def test_database_connections():
     """测试数据库连接"""
     print("\n=== 测试数据库连接 ===")
-    
+
     try:
-        from db.sqlite_manager import SQLiteManager
-        sqlite_manager = SQLiteManager()
+        from db.sqlite_manager import sqlite_manager
         print("OK: SQLite 连接成功")
-        
-        from db.chroma_manager import ChromaManager
-        chroma_manager = ChromaManager()
-        print("OK: ChromaDB 连接成功")
-        
-        return True
+        count = sqlite_manager.get_memories_count()
+        print(f"  - 当前记忆数量: {count}")
     except Exception as e:
-        print(f"FAIL: 数据库连接测试失败: {e}")
+        print(f"FAIL: SQLite 连接测试失败: {e}")
         return False
+
+    try:
+        from db.chroma_manager import chroma_manager
+        print("OK: ChromaDB 连接成功")
+    except Exception as e:
+        print(f"FAIL: ChromaDB 连接测试失败: {e}")
+        return False
+
+    return True
+
+
+def test_service_instances():
+    """测试服务实例化"""
+    print("\n=== 测试服务实例 ===")
+
+    results = []
+
+    try:
+        from services.ocr_engine import ocr_engine
+        print(f"OK: OCR Engine 实例化成功")
+        print(f"  - 引擎类型: {type(ocr_engine).__name__}")
+    except Exception as e:
+        print(f"FAIL: OCR Engine 实例化失败: {e}")
+        results.append(False)
+
+    try:
+        from services.keyboard_manager import keyboard_manager
+        print(f"OK: Keyboard Manager 实例化成功")
+        print(f"  - 运行状态: {keyboard_manager.is_running()}")
+    except Exception as e:
+        print(f"FAIL: Keyboard Manager 实例化失败: {e}")
+        results.append(False)
+
+    try:
+        from core.capture import capture_manager
+        print(f"OK: Capture Manager 实例化成功")
+        settings = capture_manager.get_settings()
+        print(f"  - 截图设置: 防抖={settings['debounce_interval']}s")
+    except Exception as e:
+        print(f"FAIL: Capture Manager 实例化失败: {e}")
+        results.append(False)
+
+    try:
+        from core.task_queue import task_queue
+        print(f"OK: Task Queue 实例化成功")
+        print(f"  - 队列状态: 运行中")
+    except Exception as e:
+        print(f"FAIL: Task Queue 实例化失败: {e}")
+        results.append(False)
+
+    return all(results) if results else True
 
 
 def main():
     """主测试函数"""
     print("=== 开始环境验证 ===\n")
-    
+
     tests = [
         test_python_version,
         test_dependencies,
         test_module_imports,
         test_path_manager,
-        test_database_connections
+        test_settings_manager,
+        test_database_connections,
+        test_service_instances,
     ]
-    
+
     results = []
     for test in tests:
         results.append(test())
-    
+
     print("\n" + "="*50)
     print("=== 环境验证结果 ===")
     print("="*50)
-    
+
+    passed = sum(1 for r in results if r)
+    total = len(results)
+    print(f"通过: {passed}/{total}")
+
     if all(results):
         print("OK: 所有测试通过！环境配置正确。")
         print("\n你可以运行: python main.py 来启动应用")
