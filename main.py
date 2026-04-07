@@ -39,19 +39,16 @@ def main():
     
     # 3. 初始化服务（ocr、ai、embedding）
     print("Initializing services...")
-    from services.ocr_engine import OCREngine
+    from services.ocr_engine import ocr_engine
     from services.ai_client import AIClient
     from services.embedding_client import EmbeddingClient
-    
-    ocr_engine = OCREngine()
+
     ai_client = AIClient()
     embedding_client = EmbeddingClient()
     
     # 4. 初始化任务队列
     print("Initializing task queue...")
-    from core.task_queue import TaskQueueManager
-    
-    task_queue = TaskQueueManager()
+    from core.task_queue import task_queue
     
     # 5. 初始化键盘管理器（全局快捷键）
     print("Initializing keyboard manager...")
