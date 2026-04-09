@@ -1,29 +1,20 @@
 """
 AI Client - 负责打包数据并与云端大模型交互
+支持构造函数注入SettingsManager依赖
 """
-from typing import Optional, Callable
-from pathlib import Path
+from typing import Optional, Callable, TYPE_CHECKING
 
 import openai
 
-from config.path_manager import path_manager
+if TYPE_CHECKING:
+    from config.settings_manager import SettingsManager
 
 
 class AIClient:
-    """AI 客户端 - 单例模式"""
+    """AI 客户端 - 支持构造函数注入依赖"""
 
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self._initialized = True
+    def __init__(self, settings_manager: Optional["SettingsManager"] = None):
+        self._settings_manager = settings_manager
         self._client: Optional[openai.OpenAI] = None
         self._api_key: Optional[str] = None
         self._base_url: Optional[str] = None
@@ -32,6 +23,15 @@ class AIClient:
         self._api_key = api_key
         self._base_url = base_url
         self._client = openai.OpenAI(api_key=api_key, base_url=base_url)
+
+    def configure_from_settings(self) -> bool:
+        if self._settings_manager is None:
+            return False
+        api_key = self._settings_manager.get("ai.api_key", "")
+        if not api_key:
+            return False
+        self.configure(api_key)
+        return True
 
     def is_configured(self) -> bool:
         return self._client is not None
@@ -54,22 +54,22 @@ class AIClient:
         if not self._client:
             raise RuntimeError("AI client not configured")
 
-        with open(image_path, "rb") as img_file:
-            response = self._client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{self._read_image_base64(image_path)}"}},
-                            {"type": "text", "text": prompt},
-                        ],
-                    }
-                ],
-                max_tokens=500,
-                temperature=0.7,
-                stream=True if stream_callback else False,
-            )
+        image_base64 = self._read_image_base64(image_path)
+        response = self._client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+            max_tokens=500,
+            temperature=0.7,
+            stream=True if stream_callback else False,
+        )
 
         if stream_callback:
             full_response = ""
@@ -101,6 +101,3 @@ class AIClient:
         import base64
         with open(image_path, "rb") as f:
             return base64.b64encode(f.read()).decode("utf-8")
-
-
-ai_client = AIClient()

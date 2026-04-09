@@ -1,38 +1,31 @@
 """
 Search Service - 统一搜索逻辑
 支持SQLite全文搜索和向量相似度搜索
+支持构造函数注入依赖
 """
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from db.sqlite_manager import SQLiteManager
+    from db.chroma_manager import ChromaManager
+    from services.embedding_client import EmbeddingClient
 
 
 class SearchService:
     """搜索服务 - 统一管理文本搜索和向量搜索"""
 
-    _instance: Optional["SearchService"] = None
+    def __init__(
+        self,
+        sqlite_manager: "SQLiteManager",
+        chroma_manager: "ChromaManager",
+        embedding_client: "EmbeddingClient",
+    ):
+        self._sqlite_manager = sqlite_manager
+        self._chroma_manager = chroma_manager
+        self._embedding_client = embedding_client
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            import threading
-            with threading.Lock():
-                if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-                    cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        import threading
-        with threading.Lock():
-            if self._initialized:
-                return
-            self._initialized = True
-            self._search_mode = "hybrid"
-            self._rrf_k = 60
-
-    def _get_container(self):
-        from container import container
-        return container
+        self._search_mode = "hybrid"
+        self._rrf_k = 60
 
     def set_search_mode(self, mode: str) -> bool:
         if mode in ("text", "vector", "hybrid"):
@@ -55,46 +48,34 @@ class SearchService:
             return self._search_hybrid(query, limit)
 
     def _search_text(self, query: str, limit: int) -> List:
-        c = self._get_container()
-        sqlite_manager = c.get("sqlite_manager")
-        return sqlite_manager.search_memories(query, limit=limit)
+        return self._sqlite_manager.search_memories(query, limit=limit)
 
     def _search_vector(self, query: str, limit: int) -> List:
-        c = self._get_container()
-        sqlite_manager = c.get("sqlite_manager")
-        chroma_manager = c.get("chroma_manager")
-        embedding_client = c.get("embedding_client")
-
-        embedding = embedding_client.get_embedding(query)
+        embedding = self._embedding_client.get_embedding(query)
         if not embedding:
             return []
 
-        results = chroma_manager.search_similar(embedding, n_results=limit)
+        results = self._chroma_manager.search_similar(embedding, n_results=limit)
         if not results:
             return []
 
         memory_ids = [r["id"] for r in results]
         memories = []
         for mem_id in memory_ids:
-            memory = sqlite_manager.get_memory_by_id(mem_id)
+            memory = self._sqlite_manager.get_memory_by_id(mem_id)
             if memory:
                 memories.append(memory)
 
         return memories
 
     def _search_hybrid(self, query: str, limit: int) -> List:
-        c = self._get_container()
-        sqlite_manager = c.get("sqlite_manager")
-        chroma_manager = c.get("chroma_manager")
-        embedding_client = c.get("embedding_client")
+        text_results = self._sqlite_manager.search_memories(query, limit=limit * 2)
 
-        text_results = sqlite_manager.search_memories(query, limit=limit * 2)
-
-        embedding = embedding_client.get_embedding(query)
+        embedding = self._embedding_client.get_embedding(query)
         if not embedding:
             return text_results[:limit]
 
-        vector_results = chroma_manager.search_similar(embedding, n_results=limit * 2)
+        vector_results = self._chroma_manager.search_similar(embedding, n_results=limit * 2)
 
         text_rank: Dict[str, float] = {}
         for rank, memory in enumerate(text_results):
@@ -113,21 +94,32 @@ class SearchService:
 
         merged = []
         for mem_id in sorted_ids[:limit]:
-            memory = sqlite_manager.get_memory_by_id(mem_id)
+            memory = self._sqlite_manager.get_memory_by_id(mem_id)
             if memory:
                 merged.append(memory)
 
         return merged
 
     def get_recent_memories(self, limit: int = 100) -> List:
-        c = self._get_container()
-        sqlite_manager = c.get("sqlite_manager")
-        return sqlite_manager.get_all_memories(limit=limit)
+        return self._sqlite_manager.get_all_memories(limit=limit)
 
     def get_memory_by_id(self, memory_id: str):
-        c = self._get_container()
-        sqlite_manager = c.get("sqlite_manager")
-        return sqlite_manager.get_memory_by_id(memory_id)
+        return self._sqlite_manager.get_memory_by_id(memory_id)
 
 
-search_service = SearchService()
+_search_service_instance: Optional[SearchService] = None
+
+
+def get_search_service() -> SearchService:
+    global _search_service_instance
+    if _search_service_instance is None:
+        from container import container
+        _search_service_instance = SearchService(
+            sqlite_manager=container.get("sqlite_manager"),
+            chroma_manager=container.get("chroma_manager"),
+            embedding_client=container.get("embedding_client"),
+        )
+    return _search_service_instance
+
+
+search_service = get_search_service()
