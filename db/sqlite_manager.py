@@ -1,14 +1,15 @@
 """
 SQLite Manager - 封装 SQLite CRUD，包含 FTS5 配置与写入互斥锁
+支持多实例隔离并行处理，注入PathManager
 """
 import sqlite3
 import threading
 from dataclasses import dataclass, asdict
-from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from pathlib import Path
 
-from config.path_manager import path_manager
+if TYPE_CHECKING:
+    from config.path_manager import PathManager
 
 
 @dataclass
@@ -38,32 +39,19 @@ class MemoryRecord:
 
 
 class SQLiteManager:
-    """SQLite 管理器 - 单例模式"""
+    """SQLite 管理器 - 支持多实例隔离，注入PathManager"""
 
-    _instance = None
-    _lock = threading.Lock()
-
-    def __new__(cls):
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-                    cls._instance._initialized = False
-        return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-        self._initialized = True
+    def __init__(self, path_manager: "PathManager"):
         self._conn: Optional[sqlite3.Connection] = None
         self._write_lock = threading.Lock()
+        self._path_manager = path_manager
+        self._db_path = path_manager.sqlite_path
         self._init_db()
 
     def _init_db(self):
-        db_path = path_manager.sqlite_path
-        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
 
         cursor = self._conn.cursor()
@@ -88,6 +76,29 @@ class SQLiteManager:
         cursor.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts
             USING fts5(ai_summary, text_content, content='memories', content_rowid='rowid')
+        """)
+
+        cursor.execute("""
+            CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
+                INSERT INTO memories_fts(rowid, ai_summary, text_content)
+                VALUES (new.rowid, new.ai_summary, new.text_content);
+            END
+        """)
+
+        cursor.execute("""
+            CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
+                INSERT INTO memories_fts(memories_fts, rowid, ai_summary, text_content)
+                VALUES ('delete', old.rowid, old.ai_summary, old.text_content);
+                INSERT INTO memories_fts(rowid, ai_summary, text_content)
+                VALUES (new.rowid, new.ai_summary, new.text_content);
+            END
+        """)
+
+        cursor.execute("""
+            CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
+                INSERT INTO memories_fts(memories_fts, rowid, ai_summary, text_content)
+                VALUES ('delete', old.rowid, old.ai_summary, old.text_content);
+            END
         """)
 
         self._conn.commit()
@@ -136,17 +147,31 @@ class SQLiteManager:
 
     def search_memories(self, query: str, limit: int = 20) -> List[MemoryRecord]:
         cursor = self._conn.cursor()
-        cursor.execute(
-            """
-            SELECT m.* FROM memories m
-            WHERE m.ai_summary LIKE ? OR m.text_content LIKE ?
-            ORDER BY m.created_at DESC
-            LIMIT ?
-            """,
-            (f"%{query}%", f"%{query}%", limit),
-        )
-        rows = cursor.fetchall()
-        return [MemoryRecord.from_row(row) for row in rows]
+        try:
+            cursor.execute(
+                """
+                SELECT m.* FROM memories m
+                JOIN memories_fts fts ON m.rowid = fts.rowid
+                WHERE memories_fts MATCH ?
+                ORDER BY rank
+                LIMIT ?
+                """,
+                (query, limit),
+            )
+            rows = cursor.fetchall()
+            return [MemoryRecord.from_row(row) for row in rows]
+        except Exception:
+            cursor.execute(
+                """
+                SELECT m.* FROM memories m
+                WHERE m.ai_summary LIKE ? OR m.text_content LIKE ?
+                ORDER BY m.created_at DESC
+                LIMIT ?
+                """,
+                (f"%{query}%", f"%{query}%", limit),
+            )
+            rows = cursor.fetchall()
+            return [MemoryRecord.from_row(row) for row in rows]
 
     def update_memory_summary(self, memory_id: str, summary: str) -> bool:
         with self._write_lock:
@@ -181,6 +206,4 @@ class SQLiteManager:
     def close(self):
         if self._conn:
             self._conn.close()
-
-
-sqlite_manager = SQLiteManager()
+            self._conn = None
